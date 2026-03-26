@@ -1,0 +1,13 @@
+utilities/lid.176.bin
+Datasets/
+.venv/
+.DS_Store
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+*.pkl
+*.csv
+*.xlsx
+*.html
+*.json
+*.log
