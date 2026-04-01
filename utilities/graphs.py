@@ -215,4 +215,95 @@ def joyplot(ax, data, group_col, value_col,
 
     ax.set_xlim(x_min, x_max)
 
+def plot_search_results(query_path, results, n_cols=5, title=""):
+    """Visualiza resultados de búsqueda"""
+    import numpy as np
+    from PIL import Image
+    import matplotlib.pyplot as plt
+    results = results.head(9).copy()
+
+    n_show = len(results)
+    n_total = n_show + 1  # query + resultados
+    n_rows = int(np.ceil(n_total / n_cols))
+
+    fig = plt.figure(figsize=(20, 12))
+    gs = fig.add_gridspec(
+        n_rows + 1,
+        n_cols,
+        height_ratios=[1] * n_rows + [1.0],
+        hspace=0.35,
+        wspace=0.20,
+    )
+
+    query_img = Image.open(query_path).convert('RGB')
+    query_array = np.asarray(query_img)
+
+    ax = fig.add_subplot(gs[0, 0])
+    ax.imshow(query_array)
+    ax.axis("off")
+    ax.set_title("QUERY", fontsize=20, fontweight="bold", pad=12)
+
+    for i, (_, row) in enumerate(results.iterrows()):
+        row_idx = (i + 1) // n_cols
+        col_idx = (i + 1) % n_cols
+        ax = fig.add_subplot(gs[row_idx, col_idx])
+
+        try:
+            img = Image.open(row["path"]).convert('RGB')
+            img_array = np.asarray(img)
+            ax.imshow(img_array)
+        except Exception:
+            ax.text(0.5, 0.5, "Error", ha='center', va='center')
+
+        ax.axis("off")
+        ax.set_title(
+            f"#{int(row['rank'])} | {row['label']}\nd = {row['distance']:.4f}",
+            fontsize=12,
+            fontweight="bold",
+            pad=10,
+        )
+
+    for j in range(n_total, n_rows * n_cols):
+        row_idx = j // n_cols
+        col_idx = j % n_cols
+        ax = fig.add_subplot(gs[row_idx, col_idx])
+        ax.axis("off")
+
+    ax_table = fig.add_subplot(gs[n_rows, :])
+    ax_table.axis("off")
+
+    table_data = [
+        [int(row["rank"]), row["label"], f"{row['distance']:.6f}"]
+        for _, row in results.iterrows()
+    ]
+
+    table = ax_table.table(
+        cellText=table_data,
+        colLabels=["Rank", "Clase", "Distancia"],
+        cellLoc="center",
+        loc="center",
+        bbox=[0.03, 0.02, 0.94, 0.96],
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(18)
+    table.scale(1.4, 3.5)
+
+    for c in range(3):
+        cell = table[(0, c)]
+        cell.set_facecolor("#1F3A5F")
+        cell.set_text_props(weight="bold", color="white", fontsize=20)
+
+    for r in range(1, len(table_data) + 1):
+        for c in range(3):
+            cell = table[(r, c)]
+            cell.set_facecolor("#F7F9FC" if r % 2 == 0 else "#FFFFFF")
+            cell.set_text_props(color="#1B1B1B", fontsize=16)
+            cell.set_edgecolor("#C9D2DC")
+            cell.set_linewidth(1.4)
+
+    if title:
+        fig.suptitle(title, fontsize=16, fontweight='bold', y=0.98)
+
+    plt.show()
 
