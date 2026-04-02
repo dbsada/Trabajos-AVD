@@ -12,6 +12,9 @@ from typing import Callable, Optional
 from scipy.stats import gaussian_kde
 import numpy as np
 from matplotlib import cm
+from IPython.display import display, HTML
+import io
+import base64
 
 def draw_piano(ax: plt.Axes,  
                note_values: dict[str, float],
@@ -307,3 +310,52 @@ def plot_search_results(query_path, results, n_cols=5, title=""):
 
     plt.show()
 
+def fig_to_base64(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
+
+def plot_group(df, cols, group_name):
+    if not cols:
+        return
+
+    html = f"""
+    <details>
+    <summary style="font-size:16px; cursor:pointer;">
+        <b>{group_name}</b>
+    </summary>
+    """
+
+    cols_per_fig = 2
+
+    for start in range(0, len(cols), cols_per_fig):
+        batch = cols[start:start + cols_per_fig]
+        n = len(batch)
+
+        fig, axes = plt.subplots(1, n, figsize=(12, 3.5), sharey=True)
+        if n == 1:
+            axes = [axes]
+
+        for ax, col in zip(axes, batch):
+            joyplot(
+                ax,
+                df,
+                group_col="genre",
+                value_col=col,
+                bins=30,
+                scale=0.85,
+                cmap="Set2"
+            )
+            ax.set_title(col.replace("_", " ").title(), fontsize=11)
+
+        plt.tight_layout()
+
+        img_base64 = fig_to_base64(fig)
+        html += f'<img src="data:image/png;base64,{img_base64}" style="width:100%; margin-bottom:10px;">'
+
+        plt.close(fig)  # importante
+
+    html += "</details>"
+
+    display(HTML(html))
