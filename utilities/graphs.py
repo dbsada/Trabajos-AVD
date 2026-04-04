@@ -15,6 +15,7 @@ from matplotlib import cm
 from IPython.display import display, HTML
 import io
 import base64
+from PIL import Image, ImageFilter
 
 def draw_piano(ax: plt.Axes,  
                note_values: dict[str, float],
@@ -316,46 +317,150 @@ def fig_to_base64(fig):
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("utf-8")
 
-def plot_group(df, cols, group_name):
-    if not cols:
-        return
+def image_to_base64(image: Image.Image):
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
+
+def blur(fig: Optional[plt.Figure] = None,
+         ax: Optional[plt.Axes] = None,
+         radius: float = 12) -> Image.Image:
+    """
+    Devuelve una copia emborronada de una figura de Matplotlib.
+
+    Parameters
+    ----------
+    fig : Optional[plt.Figure]
+        Figura a emborronar. Si no se pasa, se usa la figura activa.
+    ax : Optional[plt.Axes]
+        Eje cuya figura se quiere emborronar. Tiene prioridad sobre fig.
+    radius : float, default=12
+        Intensidad del desenfoque gaussiano.
+    """
+
+    if ax is not None:
+        fig = ax.figure
+    if fig is None:
+        fig = plt.gcf()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+
+    image = Image.open(buf).convert("RGB")
+    return image.filter(ImageFilter.GaussianBlur(radius=radius))
+
+def plot_group(df=None,
+               cols=None,
+               group_name=None,
+               group_col=None,
+               plot_func=None,
+               cols_per_fig=2,
+               **kwargs):
+    """
+    Muestra uno o varios gráficos en una sección desplegable HTML.
+
+    Modos de uso
+    ------------
+    1) Modo por columnas (backward compatible):
+       plot_group(df=..., cols=[...], group_name="...", group_col="...", plot_func=...)
+
+    2) Modo genérico (nuevo):
+       plot_group(plot_func=..., group_name="...", **kwargs)
+       donde `plot_func(**kwargs)` crea su(s) figura(s) con matplotlib.
+    """
+
+    if plot_func is None:
+        raise ValueError("Debes proporcionar 'plot_func' en plot_group().")
+
+    title = group_name or getattr(plot_func, "__name__", "Grupo")
 
     html = f"""
     <details>
     <summary style="font-size:16px; cursor:pointer;">
-        <b>{group_name}</b>
+        <b>{title}</b>
     </summary>
     """
 
-    cols_per_fig = 2
+    # Modo 1: gráfico por columnas de un DataFrame.
+    if df is not None and cols is not None and group_col is not None:
+        if not cols:
+            return
 
-    for start in range(0, len(cols), cols_per_fig):
-        batch = cols[start:start + cols_per_fig]
-        n = len(batch)
+        for start in range(0, len(cols), cols_per_fig):
+            batch = cols[start:start + cols_per_fig]
+            n = len(batch)
 
-        fig, axes = plt.subplots(1, n, figsize=(12, 3.5), sharey=True)
-        if n == 1:
-            axes = [axes]
+            fig, axes = plt.subplots(1, n, figsize=(12, 3.5), sharey=True)
+            if n == 1:
+                axes = [axes]
 
-        for ax, col in zip(axes, batch):
-            joyplot(
-                ax,
-                df,
-                group_col="genre",
-                value_col=col,
-                bins=30,
-                scale=0.85,
-                cmap="Set2"
-            )
-            ax.set_title(col.replace("_", " ").title(), fontsize=11)
+            for ax, col in zip(axes, batch):
+                plot_func(
+                    ax,
+                    df,
+                    group_col=group_col,
+                    value_col=col,
+                    **kwargs
+                )
+                ax.set_title(col.replace("_", " ").title(), fontsize=11)
 
-        plt.tight_layout()
+            plt.tight_layout()
 
+            img_base64 = fig_to_base64(fig)
+            html += f'<img src="data:image/png;base64,{img_base64}" style="width:100%; margin-bottom:10px;">'
+            plt.close(fig)
+
+        html += "</details>"
+        display(HTML(html))
+        return
+
+    # Modo 2: wrapper genérico para cualquier función de ploteo.
+    figs_before = set(plt.get_fignums())
+    captured_fig_nums = []
+    original_show = plt.show
+
+    def _capture_show(*args, **show_kwargs):
+        del args, show_kwargs
+        current = list(plt.get_fignums())
+        for num in current:
+            if num not in captured_fig_nums:
+                captured_fig_nums.append(num)
+
+    plt.show = _capture_show
+    try:
+        result = plot_func(**kwargs)
+    finally:
+        plt.show = original_show
+
+    if isinstance(result, Image.Image):
+        html += f'<img src="data:image/png;base64,{image_to_base64(result)}" style="width:100%; margin-bottom:10px;">'
+        html += "</details>"
+        display(HTML(html))
+        return
+
+    if isinstance(result, (list, tuple)) and result and all(isinstance(item, Image.Image) for item in result):
+        for image in result:
+            html += f'<img src="data:image/png;base64,{image_to_base64(image)}" style="width:100%; margin-bottom:10px;">'
+        html += "</details>"
+        display(HTML(html))
+        return
+
+    figs_after = list(plt.get_fignums())
+    new_fig_nums = [n for n in figs_after if n not in figs_before]
+    for num in captured_fig_nums:
+        if num not in new_fig_nums:
+            new_fig_nums.append(num)
+
+    if not new_fig_nums and figs_after:
+        new_fig_nums = [figs_after[-1]]
+
+    for fig_num in new_fig_nums:
+        fig = plt.figure(fig_num)
         img_base64 = fig_to_base64(fig)
         html += f'<img src="data:image/png;base64,{img_base64}" style="width:100%; margin-bottom:10px;">'
-
-        plt.close(fig)  # importante
+        plt.close(fig)
 
     html += "</details>"
-
     display(HTML(html))
