@@ -47,7 +47,6 @@ Trabajo de la asignatura **Análisis y Visualización de Datos** que implementa 
 
 Consulte `requirements.txt` para la lista completa de dependencias. Las principales incluyen:
 - PyTorch
-- TensorFlow/Keras
 - Scikit-learn
 - Pandas & NumPy
 - Librosa (procesamiento de audio)
