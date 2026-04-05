@@ -324,3 +324,52 @@ class DeepImageSearchPipeline:
             )
 
         return pd.DataFrame(results)
+
+
+class TextBERTSearchPipeline:
+    """Pipeline de busqueda textual basado en embeddings BERT precomputados."""
+
+    def __init__(self, embeddings, reviews_df, query_encoder, metric="cosine"):
+        """
+        Args:
+            embeddings (np.ndarray | list): Embeddings de la base documental, uno por resena.
+            reviews_df (pd.DataFrame): Debe contener al menos columnas 'Review' y 'Rating'.
+            query_encoder (callable): Funcion query_text -> vector 1D.
+            metric (str): Metrica de distancia. Opciones: 'chi2', 'euclidean', 'cosine', 'manhattan'.
+        """
+        if "Review" not in reviews_df.columns or "Rating" not in reviews_df.columns:
+            raise ValueError("reviews_df debe contener columnas 'Review' y 'Rating'.")
+
+        self.reviews_df = reviews_df.reset_index(drop=True)
+        self.metric = metric
+        self.query_encoder = query_encoder
+
+        self.index = {
+            int(i): np.asarray(vec, dtype=np.float32).reshape(-1)
+            for i, vec in enumerate(np.asarray(embeddings))
+        }
+        self.searcher = Searcher(self.index, metric=metric)
+
+    def search(self, query, top_k=5):
+        """Devuelve un DataFrame con [rank, idx, distance, similarity, rating, review]."""
+        query_vec = np.asarray(self.query_encoder(query), dtype=np.float32).reshape(-1)
+        ranked = self.searcher.search(query_vec, top_k=top_k)
+
+        rows = []
+        for rank, (dist, idx) in enumerate(ranked, start=1):
+            rating = float(self.reviews_df.loc[idx, "Rating"])
+            review = self.reviews_df.loc[idx, "Review"]
+            similarity = (1.0 - float(dist)) if self.metric == "cosine" else np.nan
+
+            rows.append(
+                {
+                    "rank": rank,
+                    "idx": int(idx),
+                    "distance": float(dist),
+                    "similarity": similarity,
+                    "rating": rating,
+                    "review": review,
+                }
+            )
+
+        return pd.DataFrame(rows)
